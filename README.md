@@ -57,6 +57,9 @@ docker build -t fe-login-macro .
 # 개발 이미지 빌드
 docker build -f Dockerfile.dev -t fe-login-macro-dev .
 
+# 이미지 확인
+cd /app/fe_login_macro && docker images | grep fe-login-macro
+
 # 프로덕션 컨테이너 실행
 docker run -p 80:80 fe-login-macro
 
