@@ -24,7 +24,14 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "docker:build": "docker build -t fe-login-macro .",
+    "docker:build-dev": "docker build -f Dockerfile.dev -t fe-login-macro-dev .",
+    "docker:run": "docker run -p 80:80 fe-login-macro",
+    "docker:run-dev": "docker run -p 3000:3000 -v $(pwd):/app -v /app/node_modules fe-login-macro-dev",
+    "docker:compose-dev": "docker-compose --profile dev up --build",
+    "docker:compose-prod": "docker-compose --profile prod up --build -d",
+    "docker:compose-down": "docker-compose down"
   },
   "eslintConfig": {
     "extends": [

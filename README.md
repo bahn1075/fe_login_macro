@@ -26,12 +26,48 @@
 ## 사용 방법
 
 ### 1. 프로젝트 설치 및 실행
+
+#### 로컬 개발 환경
 ```bash
 # 의존성 설치
 npm install
 
 # 개발 서버 실행
 npm start
+```
+
+#### Docker 환경
+```bash
+# 프로덕션 빌드 및 실행
+npm run docker:build
+npm run docker:run
+
+# 또는 Docker Compose 사용
+npm run docker:compose-prod
+
+# 개발 환경 (핫 리로드 지원)
+npm run docker:compose-dev
+```
+
+#### Docker 명령어
+```bash
+# 프로덕션 이미지 빌드
+docker build -t fe-login-macro .
+
+# 개발 이미지 빌드
+docker build -f Dockerfile.dev -t fe-login-macro-dev .
+
+# 프로덕션 컨테이너 실행
+docker run -p 80:80 fe-login-macro
+
+# 개발 컨테이너 실행 (볼륨 마운트)
+docker run -p 3000:3000 -v $(pwd):/app -v /app/node_modules fe-login-macro-dev
+
+# Docker Compose로 개발 환경 실행
+docker-compose --profile dev up --build
+
+# Docker Compose로 프로덕션 환경 실행
+docker-compose --profile prod up --build -d
 ```
 
 ### 2. 날짜 선택
@@ -74,9 +110,34 @@ npm start
 │   ├── App.css                    # 스타일시트
 │   ├── index.tsx                  # 애플리케이션 엔트리포인트
 │   └── react-app-env.d.ts        # TypeScript 타입 정의
+├── Dockerfile                     # 프로덕션 Docker 이미지
+├── Dockerfile.dev                 # 개발용 Docker 이미지
+├── docker-compose.yml             # Docker Compose 설정
+├── nginx.conf                     # Nginx 설정 파일
+├── .dockerignore                  # Docker 빌드 제외 파일
 ├── package.json                   # 프로젝트 설정
 ├── tsconfig.json                  # TypeScript 설정
 └── README.md                      # 프로젝트 문서
+```
+
+## Docker 배포
+
+### 🐳 Docker 특징
+- **멀티 스테이지 빌드**: 최적화된 프로덕션 이미지 생성
+- **Nginx 서버**: 정적 파일 서빙 및 SPA 라우팅 지원
+- **개발/프로덕션 환경**: 각각 다른 Docker 설정 제공
+- **볼륨 마운트**: 개발 환경에서 핫 리로드 지원
+
+### 🚀 배포 환경별 실행
+```bash
+# 개발 환경 (http://localhost:3000)
+docker-compose --profile dev up --build
+
+# 프로덕션 환경 (http://localhost:80)
+docker-compose --profile prod up --build -d
+
+# 컨테이너 정지
+docker-compose down
 ```
 
 ## 생성되는 배치 파일 예시
