@@ -13,14 +13,6 @@ RUN npm ci
 # 소스 코드 전체 복사
 COPY . .
 
-# 복사된 파일 확인 (디버깅)
-RUN echo "=== Debugging: Checking copied files ===" && \
-    ls -la /app && \
-    echo "=== Checking public directory ===" && \
-    ls -la /app/public/ 2>/dev/null || echo "public directory not found" && \
-    echo "=== Checking if index.html exists ===" && \
-    test -f /app/public/index.html && echo "index.html exists" || echo "index.html NOT found"
-
 # 프로덕션 빌드 생성
 RUN npm run build
 
