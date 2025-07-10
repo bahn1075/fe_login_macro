@@ -148,7 +148,22 @@ Image Tags Created:
 
 ### 일반적인 문제와 해결방법
 
-#### 1. Harbor 인증 실패
+#### 1. Docker 설치 문제
+```bash
+# 문제: docker: not found
+# 해결: Docker 및 Docker Pipeline Plugin 설치 필요
+
+# Jenkins Plugin Manager에서 설치:
+# - Docker Pipeline Plugin
+# - Docker plugin (선택사항)
+
+# Jenkins 에이전트에 Docker 설치 (Ubuntu/Debian):
+sudo apt-get update && sudo apt-get install docker.io
+sudo usermod -aG docker jenkins
+sudo systemctl restart docker jenkins
+```
+
+#### 2. Harbor 인증 실패
 ```bash
 # 문제: docker login failed
 # 해결: Jenkins credential 확인
@@ -178,6 +193,38 @@ Image Tags Created:
 # 해결: Docker 이미지 정리
 docker system prune -af
 docker volume prune -f
+```
+
+## 일반적인 문제 해결
+
+### ❓ 브랜치 태그에 "head"가 표시되는 문제
+
+**문제**: 태그가 `1.0.8-head-504a333d` 형태로 생성됨
+**원인**: Jenkins가 detached HEAD 상태에서 실행되어 정확한 브랜치명을 감지하지 못함
+
+**해결방법**:
+
+#### 1. Jenkins Job 설정 변경
+```bash
+# Jenkins Job Configuration > Source Code Management > Git
+# Branches to build: */main (또는 원하는 브랜치)
+# Additional Behaviours: "Check out to specific local branch" 추가
+# Branch name: main (또는 원하는 브랜치명)
+```
+
+#### 2. Multibranch Pipeline 사용 (권장)
+```bash
+# Jenkins > New Item > Multibranch Pipeline
+# 자동으로 BRANCH_NAME 환경변수 설정됨
+# 각 브랜치별로 자동 빌드 생성
+```
+
+#### 3. 수동으로 브랜치명 지정
+```groovy
+// Jenkinsfile에서 직접 설정
+environment {
+    MANUAL_BRANCH_NAME = "main"  // 또는 원하는 브랜치명
+}
 ```
 
 ## 고급 설정
@@ -242,3 +289,98 @@ stage('Security Scan') {
 - [Docker Pipeline 플러그인](https://plugins.jenkins.io/docker-workflow/)
 - [Harbor 문서](https://goharbor.io/docs/)
 - [SemVer 규칙](https://semver.org/)
+
+## Jenkins Docker Plugin 설정 가이드
+
+### 🐳 설치된 플러그인 확인
+Jenkins > Manage Jenkins > Plugins > Installed 에서 확인:
+- ✅ **Docker Pipeline Plugin** (설치 완료)
+- ✅ **Docker plugin** (옵션, 설치 완료)
+
+### 📋 Jenkins에서 Docker 사용 설정
+
+#### 1. Docker Tool 설정 (선택사항)
+```bash
+# Jenkins > Manage Jenkins > Tools > Docker installations
+Name: docker
+Install automatically: ✅ 체크
+Installer: Download from docker.com
+Docker version: latest
+```
+
+#### 2. Jenkins 에이전트 Docker 권한 확인
+```bash
+# Jenkins 서버에서 실행
+sudo usermod -aG docker jenkins
+sudo systemctl restart jenkins
+
+# 권한 테스트
+sudo -u jenkins docker ps
+sudo -u jenkins docker --version
+```
+
+#### 3. 현재 Jenkinsfile 사용법
+현재 작성된 Jenkinsfile은 **Docker Pipeline Plugin**을 사용합니다:
+
+```groovy
+// Docker 이미지 빌드
+def dockerImage = docker.build(
+    env.FULL_IMAGE_TAG,
+    "--file Dockerfile ."
+)
+
+// Harbor 레지스트리 로그인 및 푸시
+docker.withRegistry("https://${HARBOR_REGISTRY}", HARBOR_CREDENTIAL_ID) {
+    sh "docker push ${env.FULL_IMAGE_TAG}"
+}
+```
+
+### 🎯 **지금 바로 해야 할 3가지**
+
+#### ✅ **1단계: Harbor Credential 생성**
+```bash
+Jenkins → Manage Jenkins → Credentials → Global → Add Credentials
+
+Type: "Username with password" 선택
+ID: harbor (정확히 이렇게!)
+Username: [Harbor 로그인 아이디]
+Password: [Harbor 로그인 비밀번호]
+```
+
+#### ✅ **2단계: Jenkins Job Branch 설정**
+```bash
+Job Configuration → Source Code Management → Git
+Branches to build: */develop (또는 */main)
+
+Additional Behaviours → Add:
+"Check out to specific local branch" 선택
+Branch name: develop (브랜치명 입력)
+```
+
+#### ✅ **3단계: 빌드 실행**
+```bash
+Jenkins Dashboard → [Job 이름] → "Build Now" 클릭
+```
+
+### 🔍 **빌드 실패 시 확인사항**
+
+#### Docker 관련 에러
+```bash
+# 에러: docker: command not found
+→ Jenkins 에이전트에 Docker 설치 필요
+
+# 에러: permission denied
+→ Jenkins 사용자 권한 설정 필요:
+sudo usermod -aG docker jenkins
+sudo systemctl restart jenkins
+```
+
+#### Harbor 관련 에러  
+```bash
+# 에러: authentication required
+→ Harbor credential ID가 "harbor"인지 확인
+→ Harbor 사용자명/비밀번호 정확성 확인
+
+# 에러: repository does not exist
+→ Harbor에서 fe_login_macro/dev 저장소 생성 필요
+```

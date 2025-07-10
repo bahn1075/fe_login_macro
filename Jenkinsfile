@@ -27,10 +27,27 @@ pipeline {
                         returnStdout: true
                     ).trim()
                     
-                    env.GIT_BRANCH_NAME = sh(
-                        script: "git rev-parse --abbrev-ref HEAD",
-                        returnStdout: true
-                    ).trim()
+                    // 브랜치명 가져오기 (Jenkins 환경변수 우선 사용)
+                    if (env.BRANCH_NAME) {
+                        // Multibranch Pipeline의 경우
+                        env.GIT_BRANCH_NAME = env.BRANCH_NAME
+                    } else if (env.GIT_BRANCH) {
+                        // SCM에서 설정된 브랜치
+                        env.GIT_BRANCH_NAME = env.GIT_BRANCH.replaceAll(/^origin\//, '')
+                    } else {
+                        // Git 명령어로 직접 확인
+                        def branchName = sh(
+                            script: """
+                                # 현재 브랜치 확인 (여러 방법 시도)
+                                git symbolic-ref --short HEAD 2>/dev/null || \
+                                git describe --all --exact-match HEAD 2>/dev/null | sed 's/^.*\\///' || \
+                                git name-rev --name-only HEAD 2>/dev/null | sed 's/^.*\\///' || \
+                                echo 'unknown'
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        env.GIT_BRANCH_NAME = branchName
+                    }
                     
                     // 브랜치명에서 특수문자 제거 (Docker 태그 규칙 준수)
                     env.CLEAN_BRANCH_NAME = env.GIT_BRANCH_NAME.replaceAll(/[^a-zA-Z0-9._-]/, '-').toLowerCase()
@@ -38,6 +55,8 @@ pipeline {
                     echo "Git Commit: ${env.GIT_COMMIT_SHORT}"
                     echo "Git Branch: ${env.GIT_BRANCH_NAME}"
                     echo "Clean Branch Name: ${env.CLEAN_BRANCH_NAME}"
+                    echo "Jenkins BRANCH_NAME: ${env.BRANCH_NAME ?: 'not set'}"
+                    echo "Jenkins GIT_BRANCH: ${env.GIT_BRANCH ?: 'not set'}"
                 }
             }
         }
