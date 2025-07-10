@@ -10,8 +10,22 @@ COPY package*.json ./
 # 의존성 설치 (빌드 시 devDependencies 필요)
 RUN npm ci
 
-# 소스 코드 복사
-COPY . .
+# public 폴더 명시적 복사
+COPY public/ ./public/
+
+# src 폴더 복사
+COPY src/ ./src/
+
+# 기타 필요한 파일들 복사
+COPY tsconfig.json ./
+
+# 복사된 파일 확인 (디버깅)
+RUN echo "=== Debugging: Checking copied files ===" && \
+    ls -la /app && \
+    echo "=== Checking public directory ===" && \
+    ls -la /app/public/ && \
+    echo "=== Checking if index.html exists ===" && \
+    test -f /app/public/index.html && echo "index.html exists" || echo "index.html NOT found"
 
 # 프로덕션 빌드 생성
 RUN npm run build

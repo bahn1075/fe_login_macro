@@ -22,6 +22,11 @@ coverage/
 .env.test.local
 .env.production.local
 
+# 중요: public 폴더는 포함되어야 함
+!public/
+!public/index.html
+!src/
+
 # IDE and editor files
 .vscode/
 .idea/
