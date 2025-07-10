@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         // Harbor 설정
-        HARBOR_REGISTRY = "${env.HARBOR_URL ?: 'harbor.example.com'}"
+        HARBOR_REGISTRY = "${env.HARBOR_URL ?: 'harbor.local'}"
         HARBOR_PROJECT = "fe_login_macro"
         HARBOR_REPO = "dev"
         HARBOR_CREDENTIAL_ID = "harbor"
