@@ -136,6 +136,39 @@ spec:
             }
         }
         
+        stage('Test Harbor Credential') {
+            steps {
+                container('docker') {
+                    script {
+                        echo "Testing Harbor credential and connectivity..."
+                        
+                        // Harbor 연결 테스트
+                        sh """
+                            echo "=== Testing Harbor connectivity ==="
+                            curl -k -I https://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "Harbor HTTPS connection failed"
+                            curl -k -I http://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "Harbor HTTP connection failed"
+                        """
+                        
+                        // Harbor credential 테스트
+                        withCredentials([usernamePassword(credentialsId: HARBOR_CREDENTIAL_ID, passwordVariable: 'HARBOR_PASSWORD', usernameVariable: 'HARBOR_USERNAME')]) {
+                            sh """
+                                echo "=== Testing Harbor credential ==="
+                                echo "Harbor Registry: ${HARBOR_REGISTRY}"
+                                echo "Harbor Username: \$HARBOR_USERNAME"
+                                echo "Harbor Password length: \${#HARBOR_PASSWORD}"
+                                
+                                echo "=== Testing Docker login ==="
+                                echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin || echo "Docker login failed"
+                                
+                                echo "=== Testing Harbor API access ==="
+                                curl -k -u "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" https://${HARBOR_REGISTRY}/api/v2.0/projects || echo "Harbor API access failed"
+                            """
+                        }
+                    }
+                }
+            }
+        }
+        
         stage('Docker Push to Harbor') {
             steps {
                 container('docker') {
