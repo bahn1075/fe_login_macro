@@ -10,22 +10,20 @@ metadata:
 spec:
   containers:
   - name: docker
-    image: docker:24-dind
-    securityContext:
-      privileged: true
-    env:
-    - name: DOCKER_TLS_CERTDIR
-      value: ""
+    image: docker:24-cli
+    command:
+    - cat
+    tty: true
     volumeMounts:
     - name: docker-sock
       mountPath: /var/run/docker.sock
     resources:
       requests:
-        memory: "512Mi"
-        cpu: "250m"
+        memory: "256Mi"
+        cpu: "100m"
       limits:
-        memory: "2Gi"
-        cpu: "1000m"
+        memory: "1Gi"
+        cpu: "500m"
   - name: kubectl
     image: bitnami/kubectl:latest
     command:
@@ -121,18 +119,9 @@ spec:
                     script {
                         echo "Building Docker image in Kubernetes Pod..."
                         
-                        // Docker 서비스 준비 대기
-                        sh """
-                            echo "Waiting for Docker daemon to be ready..."
-                            for i in {1..30}; do
-                                if docker info >/dev/null 2>&1; then
-                                    echo "Docker daemon is ready!"
-                                    break
-                                fi
-                                echo "Waiting for Docker daemon... (\$i/30)"
-                                sleep 2
-                            done
-                        """
+                        // Docker 버전 및 연결 확인
+                        sh "docker --version"
+                        sh "docker info"
                         
                         // Docker 이미지 빌드
                         sh """

@@ -392,15 +392,19 @@ sudo systemctl restart jenkins
 이 파이프라인은 **Kubernetes Pod agent**를 사용하여 실행됩니다:
 
 #### Pod 구성:
-- **docker container**: Docker-in-Docker (DinD) 환경
+- **docker container**: Docker CLI 환경 (Host Docker 소켓 사용)
 - **kubectl container**: Kubernetes 명령어 실행용 (확장 가능)
-- **Volume**: Host Docker 소켓 마운트
+- **Volume**: Host Docker 소켓 마운트 (`/var/run/docker.sock`)
+
+#### 설정 방식:
+- ✅ **Docker 소켓 마운트**: Host의 Docker 데몬 사용
+- ❌ **Docker-in-Docker (DinD)**: 복잡하고 권한 문제 발생 가능
 
 #### 필수 요구사항:
 1. **Jenkins Kubernetes Plugin** 설치
-2. **Kubernetes 클러스터** 접근 권한
-3. **Harbor credential** 설정
-4. **privileged Pod** 실행 권한
+2. **Kubernetes 클러스터** 접근 권한  
+3. **Host Docker 소켓** 접근 권한
+4. **Harbor credential** 설정
 
 ### 📋 **Kubernetes 설정 확인사항**
 
@@ -454,7 +458,34 @@ subjects:
   namespace: jenkins
 ```
 
-#### 3. Docker 소켓 접근 권한
-Node의 Docker 소켓에 접근할 수 있어야 합니다:
-- **호스트 경로**: `/var/run/docker.sock`
-- **Pod 권한**: `privileged: true`
+#### 3. Docker 소켓 접근 설정
+Host의 Docker 소켓에 접근할 수 있어야 합니다:
+
+**방법 1: DaemonSet으로 Docker 그룹 ID 확인**
+```bash
+# Host의 Docker 그룹 ID 확인
+kubectl run docker-gid-check --rm -it --image=alpine -- sh -c "ls -la /var/run/docker.sock"
+
+# 출력 예시: srw-rw---- 1 root docker ... /var/run/docker.sock
+# docker 그룹 ID는 보통 999 또는 998
+```
+
+**방법 2: Pod에서 Docker 그룹 추가 (권장)**
+```yaml
+# Jenkinsfile의 Pod 설정에 추가
+spec:
+  securityContext:
+    fsGroup: 999  # Docker 그룹 ID
+  containers:
+  - name: docker
+    securityContext:
+      runAsUser: 1000
+      runAsGroup: 999  # Docker 그룹에 추가
+```
+
+**방법 3: Node의 Docker 소켓 권한 설정**
+```bash
+# 각 Kubernetes Node에서 실행
+sudo chmod 666 /var/run/docker.sock
+# 또는 더 보안적인 방법으로 jenkins 사용자를 docker 그룹에 추가
+```
