@@ -106,6 +106,8 @@ docker-compose --profile prod up --build -d
 
 ```
 /app/fe_login_macro/
+├── docs/
+│   └── jenkins-pipeline-guide.md # Jenkins 파이프라인 설정 가이드
 ├── public/
 │   └── index.html                 # HTML 템플릿
 ├── src/
@@ -115,7 +117,9 @@ docker-compose --profile prod up --build -d
 │   └── react-app-env.d.ts        # TypeScript 타입 정의
 ├── Dockerfile                     # 프로덕션 Docker 이미지
 ├── Dockerfile.dev                 # 개발용 Docker 이미지
+├── Jenkinsfile                    # Jenkins CI/CD 파이프라인
 ├── docker-compose.yml             # Docker Compose 설정
+├── docker-compose.dev.yml         # 개발용 Docker Compose 설정
 ├── nginx.conf                     # Nginx 설정 파일
 ├── .dockerignore                  # Docker 빌드 제외 파일
 ├── package.json                   # 프로젝트 설정
@@ -142,6 +146,33 @@ docker-compose --profile prod up --build -d
 # 컨테이너 정지
 docker-compose down
 ```
+
+## CI/CD Pipeline
+
+### 🚀 Jenkins 자동화 빌드
+이 프로젝트는 Jenkins Pipeline을 통한 자동화된 CI/CD를 지원합니다.
+
+#### 파이프라인 특징
+- **자동 Docker 빌드**: Dockerfile을 통한 멀티 스테이지 빌드
+- **Harbor 레지스트리**: Kubernetes 환경의 Harbor 레지스트리에 자동 푸시
+- **SemVer 태그**: `{major}.{minor}.{patch}-{branch}-{commit_id}` 형식
+- **자동 정리**: 빌드 후 로컬 이미지 자동 삭제
+
+#### 생성되는 이미지 태그
+```bash
+# 버전별 태그
+harbor.example.com/fe_login_macro/dev:1.0.15-main-a1b2c3d4
+
+# Latest 태그
+harbor.example.com/fe_login_macro/dev:latest
+```
+
+#### Jenkins 설정 필요사항
+1. **플러그인**: Harbor Plugin (설치 완료), Docker Pipeline
+2. **Credential**: `harbor` - Harbor 레지스트리 인증
+3. **환경변수**: `HARBOR_URL` (옵션)
+
+자세한 설정 방법은 [`docs/jenkins-pipeline-guide.md`](docs/jenkins-pipeline-guide.md) 참조.
 
 ## 생성되는 배치 파일 예시
 
