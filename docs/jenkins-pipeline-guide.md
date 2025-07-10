@@ -461,31 +461,16 @@ subjects:
 #### 3. Docker 소켓 접근 설정
 Host의 Docker 소켓에 접근할 수 있어야 합니다:
 
-**방법 1: DaemonSet으로 Docker 그룹 ID 확인**
+**방법 1: Node의 Docker 소켓 권한 설정**
 ```bash
-# Host의 Docker 그룹 ID 확인
-kubectl run docker-gid-check --rm -it --image=alpine -- sh -c "ls -la /var/run/docker.sock"
-
-# 출력 예시: srw-rw---- 1 root docker ... /var/run/docker.sock
-# docker 그룹 ID는 보통 999 또는 998
+# 각 Kubernetes Node에서 실행
+sudo chmod 666 /var/run/docker.sock
 ```
 
-**방법 2: Pod에서 Docker 그룹 추가 (권장)**
+**방법 2: Pod에서 Docker 그룹 추가**
 ```yaml
 # Jenkinsfile의 Pod 설정에 추가
 spec:
   securityContext:
     fsGroup: 999  # Docker 그룹 ID
-  containers:
-  - name: docker
-    securityContext:
-      runAsUser: 1000
-      runAsGroup: 999  # Docker 그룹에 추가
-```
-
-**방법 3: Node의 Docker 소켓 권한 설정**
-```bash
-# 각 Kubernetes Node에서 실행
-sudo chmod 666 /var/run/docker.sock
-# 또는 더 보안적인 방법으로 jenkins 사용자를 docker 그룹에 추가
 ```

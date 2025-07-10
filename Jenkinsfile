@@ -75,7 +75,6 @@ spec:
                         // Git 명령어로 직접 확인
                         def branchName = sh(
                             script: """
-                                # 현재 브랜치 확인 (여러 방법 시도)
                                 git symbolic-ref --short HEAD 2>/dev/null || \
                                 git describe --all --exact-match HEAD 2>/dev/null | sed 's/^.*\\///' || \
                                 git name-rev --name-only HEAD 2>/dev/null | sed 's/^.*\\///' || \
@@ -92,18 +91,6 @@ spec:
                     echo "Git Commit: ${env.GIT_COMMIT_SHORT}"
                     echo "Git Branch: ${env.GIT_BRANCH_NAME}"
                     echo "Clean Branch Name: ${env.CLEAN_BRANCH_NAME}"
-                    echo "Jenkins BRANCH_NAME: ${env.BRANCH_NAME ?: 'not set'}"
-                    echo "Jenkins GIT_BRANCH: ${env.GIT_BRANCH ?: 'not set'}"
-                    
-                    // Git 상태 및 파일 확인
-                    sh """
-                        echo "=== Git Status ==="
-                        git status --porcelain || true
-                        echo "=== Git tracked files ==="
-                        git ls-files | grep -E '^public/' || echo "No public files tracked in Git"
-                        echo "=== Check if public exists in Git ==="
-                        git show HEAD:public/index.html 2>/dev/null && echo "public/index.html exists in Git" || echo "public/index.html NOT in Git"
-                    """
                 }
             }
         }
