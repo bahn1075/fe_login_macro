@@ -123,6 +123,18 @@ spec:
                         sh "docker --version"
                         sh "docker info"
                         
+                        // 현재 디렉토리 및 파일 구조 확인
+                        sh """
+                            echo "=== Current directory ==="
+                            pwd
+                            echo "=== Files in current directory ==="
+                            ls -la
+                            echo "=== Checking if public directory exists ==="
+                            test -d public && echo "public directory exists" || echo "public directory NOT found"
+                            echo "=== Checking if public/index.html exists ==="
+                            test -f public/index.html && echo "public/index.html exists" || echo "public/index.html NOT found"
+                        """
+                        
                         // Docker 이미지 빌드
                         sh """
                             echo "Building Docker image: ${env.FULL_IMAGE_TAG}"
