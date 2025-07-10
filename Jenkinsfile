@@ -1,5 +1,44 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    jenkins: worker
+spec:
+  containers:
+  - name: docker
+    image: docker:24-dind
+    securityContext:
+      privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+  - name: kubectl
+    image: bitnami/kubectl:latest
+    command:
+    - cat
+    tty: true
+  volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+      type: Socket
+"""
+        }
+    }
     
     environment {
         // Harbor 설정
@@ -78,57 +117,83 @@ pipeline {
         
         stage('Docker Build') {
             steps {
-                script {
-                    echo "Building Docker image..."
-                    
-                    // Docker 이미지 빌드
-                    def dockerImage = docker.build(
-                        env.FULL_IMAGE_TAG,
-                        "--file Dockerfile ."
-                    )
-                    
-                    // latest 태그도 추가
-                    sh "docker tag ${env.FULL_IMAGE_TAG} ${env.LATEST_IMAGE_TAG}"
-                    
-                    echo "Docker image built successfully: ${env.FULL_IMAGE_TAG}"
+                container('docker') {
+                    script {
+                        echo "Building Docker image in Kubernetes Pod..."
+                        
+                        // Docker 서비스 준비 대기
+                        sh """
+                            echo "Waiting for Docker daemon to be ready..."
+                            for i in {1..30}; do
+                                if docker info >/dev/null 2>&1; then
+                                    echo "Docker daemon is ready!"
+                                    break
+                                fi
+                                echo "Waiting for Docker daemon... (\$i/30)"
+                                sleep 2
+                            done
+                        """
+                        
+                        // Docker 이미지 빌드
+                        sh """
+                            echo "Building Docker image: ${env.FULL_IMAGE_TAG}"
+                            docker build -t ${env.FULL_IMAGE_TAG} --file Dockerfile .
+                            docker tag ${env.FULL_IMAGE_TAG} ${env.LATEST_IMAGE_TAG}
+                        """
+                        
+                        // 빌드된 이미지 확인
+                        sh "docker images | grep '${HARBOR_PROJECT}/${HARBOR_REPO}' || true"
+                        
+                        echo "✅ Docker image built successfully: ${env.FULL_IMAGE_TAG}"
+                    }
                 }
             }
         }
         
         stage('Docker Push to Harbor') {
             steps {
-                script {
-                    echo "Pushing Docker image to Harbor registry..."
-                    
-                    // Harbor 레지스트리에 로그인 및 푸시
-                    docker.withRegistry("https://${HARBOR_REGISTRY}", HARBOR_CREDENTIAL_ID) {
-                        // 버전 태그 푸시
-                        sh "docker push ${env.FULL_IMAGE_TAG}"
-                        echo "Pushed: ${env.FULL_IMAGE_TAG}"
+                container('docker') {
+                    script {
+                        echo "Pushing Docker image to Harbor registry..."
                         
-                        // latest 태그 푸시
-                        sh "docker push ${env.LATEST_IMAGE_TAG}"
-                        echo "Pushed: ${env.LATEST_IMAGE_TAG}"
+                        // Harbor 레지스트리 로그인
+                        withCredentials([usernamePassword(credentialsId: HARBOR_CREDENTIAL_ID, passwordVariable: 'HARBOR_PASSWORD', usernameVariable: 'HARBOR_USERNAME')]) {
+                            sh """
+                                echo "Logging into Harbor registry: ${HARBOR_REGISTRY}"
+                                echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin
+                            """
+                        }
+                        
+                        // 이미지 푸시
+                        sh """
+                            echo "Pushing images to Harbor..."
+                            docker push ${env.FULL_IMAGE_TAG}
+                            docker push ${env.LATEST_IMAGE_TAG}
+                        """
+                        
+                        echo "✅ Docker images pushed successfully to Harbor!"
+                        echo "  - ${env.FULL_IMAGE_TAG}"
+                        echo "  - ${env.LATEST_IMAGE_TAG}"
                     }
-                    
-                    echo "Docker images pushed successfully to Harbor!"
                 }
             }
         }
         
         stage('Clean Up') {
             steps {
-                script {
-                    echo "Cleaning up local Docker images..."
-                    
-                    // 로컬 Docker 이미지 정리
-                    sh """
-                        docker rmi ${env.FULL_IMAGE_TAG} || true
-                        docker rmi ${env.LATEST_IMAGE_TAG} || true
-                        docker system prune -f || true
-                    """
-                    
-                    echo "Clean up completed."
+                container('docker') {
+                    script {
+                        echo "Cleaning up local Docker images..."
+                        
+                        // 로컬 Docker 이미지 정리
+                        sh """
+                            docker rmi ${env.FULL_IMAGE_TAG} || true
+                            docker rmi ${env.LATEST_IMAGE_TAG} || true
+                            docker system prune -f || true
+                        """
+                        
+                        echo "✅ Clean up completed."
+                    }
                 }
             }
         }

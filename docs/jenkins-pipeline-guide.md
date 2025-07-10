@@ -384,3 +384,77 @@ sudo systemctl restart jenkins
 # 에러: repository does not exist
 → Harbor에서 fe_login_macro/dev 저장소 생성 필요
 ```
+
+## Kubernetes 환경 설정
+
+### 🎯 **Kubernetes 클러스터에서 Jenkins 실행**
+
+이 파이프라인은 **Kubernetes Pod agent**를 사용하여 실행됩니다:
+
+#### Pod 구성:
+- **docker container**: Docker-in-Docker (DinD) 환경
+- **kubectl container**: Kubernetes 명령어 실행용 (확장 가능)
+- **Volume**: Host Docker 소켓 마운트
+
+#### 필수 요구사항:
+1. **Jenkins Kubernetes Plugin** 설치
+2. **Kubernetes 클러스터** 접근 권한
+3. **Harbor credential** 설정
+4. **privileged Pod** 실행 권한
+
+### 📋 **Kubernetes 설정 확인사항**
+
+#### 1. Jenkins Kubernetes Plugin 설정
+```bash
+Jenkins > Manage Jenkins > Configure System > Cloud
+
+# Kubernetes 클러스터 설정:
+Name: kubernetes
+Kubernetes URL: https://kubernetes.default.svc.cluster.local
+Namespace: jenkins (또는 Jenkins가 실행 중인 네임스페이스)
+```
+
+#### 2. RBAC 권한 설정
+Jenkins ServiceAccount에 Pod 생성 권한이 필요합니다:
+
+```yaml
+# jenkins-rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins
+  namespace: jenkins
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jenkins-pod-manager
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jenkins-pod-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jenkins-pod-manager
+subjects:
+- kind: ServiceAccount
+  name: jenkins
+  namespace: jenkins
+```
+
+#### 3. Docker 소켓 접근 권한
+Node의 Docker 소켓에 접근할 수 있어야 합니다:
+- **호스트 경로**: `/var/run/docker.sock`
+- **Pod 권한**: `privileged: true`
