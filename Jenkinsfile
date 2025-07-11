@@ -142,33 +142,25 @@ spec:
                     script {
                         echo "Testing Harbor internal service connectivity..."
                         
-                        // Harbor 내부 서비스 연결 테스트
+                        // DNS 해결 확인만 수행
                         sh """
-                            echo "=== Testing Harbor Internal Service ==="
-                            echo "Harbor Registry: ${HARBOR_REGISTRY}"
+                            echo "=== Harbor Internal Service DNS Check ==="
+                            echo "Harbor Core Service: ${HARBOR_REGISTRY}"
+                            nslookup ${HARBOR_REGISTRY} || echo "Harbor Core DNS resolution failed"
                             
-                            # Kubernetes DNS 해결 테스트
-                            nslookup ${HARBOR_REGISTRY} || echo "DNS resolution failed"
-                            
-                            # HTTP 연결 테스트 (내부 서비스는 보통 HTTP 사용)
-                            curl -v --connect-timeout 10 --max-time 30 http://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "Harbor API access failed"
-                            
-                            # Docker Registry 엔드포인트 테스트 (포트 5000)
-                            curl -v --connect-timeout 10 --max-time 30 http://harbor-registry.harbor.svc.cluster.local:5000/v2/ || echo "Docker registry endpoint failed"
+                            echo "Harbor Registry Service: harbor-registry.harbor.svc.cluster.local"
+                            nslookup harbor-registry.harbor.svc.cluster.local || echo "Harbor Registry DNS resolution failed"
                         """
                         
-                        // Harbor credential 테스트
+                        // Harbor credential으로 직접 Docker login 테스트
                         withCredentials([usernamePassword(credentialsId: HARBOR_CREDENTIAL_ID, passwordVariable: 'HARBOR_PASSWORD', usernameVariable: 'HARBOR_USERNAME')]) {
                             sh """
-                                echo "=== Testing Harbor credential ==="
+                                echo "=== Testing Docker login to Harbor Registry ==="
                                 echo "Harbor Username: \$HARBOR_USERNAME"
                                 echo "Harbor Password length: \${#HARBOR_PASSWORD}"
                                 
-                                echo "=== Testing Docker login to Harbor Registry ==="
+                                echo "Attempting Docker login to Harbor Registry..."
                                 echo "\$HARBOR_PASSWORD" | docker login harbor-registry.harbor.svc.cluster.local:5000 -u "\$HARBOR_USERNAME" --password-stdin || echo "Docker login failed"
-                                
-                                echo "=== Testing Harbor API access ==="
-                                curl -u "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" http://${HARBOR_REGISTRY}/api/v2.0/projects || echo "Harbor API access failed"
                             """
                         }
                     }
