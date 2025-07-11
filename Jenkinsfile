@@ -42,11 +42,14 @@ spec:
                         returnStdout: true
                     ).trim()
                     
-                    // 브랜치명 가져오기
-                    env.GIT_BRANCH_NAME = env.BRANCH_NAME ?: sh(
-                        script: "git symbolic-ref --short HEAD",
-                        returnStdout: true
-                    ).trim()
+                    // 브랜치명 가져오기 (Jenkins 환경변수 우선, fallback으로 develop 사용)
+                    if (env.BRANCH_NAME) {
+                        env.GIT_BRANCH_NAME = env.BRANCH_NAME
+                    } else if (env.GIT_BRANCH) {
+                        env.GIT_BRANCH_NAME = env.GIT_BRANCH.replaceAll(/^origin\//, '')
+                    } else {
+                        env.GIT_BRANCH_NAME = "develop"  // 기본값
+                    }
                     
                     // 브랜치명 정리 (Docker 태그 규칙 준수)
                     env.CLEAN_BRANCH_NAME = env.GIT_BRANCH_NAME.replaceAll(/[^a-zA-Z0-9._-]/, '-').toLowerCase()
@@ -54,6 +57,8 @@ spec:
                     // SemVer + Branch + Commit ID 태그 생성
                     env.IMAGE_TAG = "${MAJOR_VERSION}.${MINOR_VERSION}.${env.BUILD_NUMBER}-${env.CLEAN_BRANCH_NAME}-${env.GIT_COMMIT_SHORT}"
                     
+                    echo "Git Branch: ${env.GIT_BRANCH_NAME}"
+                    echo "Clean Branch: ${env.CLEAN_BRANCH_NAME}"
                     echo "Image Tag: ${env.IMAGE_TAG}"
                 }
             }
