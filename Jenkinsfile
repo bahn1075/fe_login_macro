@@ -11,13 +11,36 @@ metadata:
 spec:
   containers:
   - name: docker
+    image: docker:24-dind  # DinD 이미지로 변경
+    command:
+    - dockerd
+    - --host=tcp://0.0.0.0:2375
+    - --host=unix:///var/run/docker.sock
+    - --storage-driver=overlay2
+    - --tls=false
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: docker-storage
+      mountPath: /var/lib/docker
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "200m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+  - name: docker-cli
     image: docker:24-cli
     command:
     - cat
     tty: true
-    volumeMounts:
-    - name: docker-sock
-      mountPath: /var/run/docker.sock
+    env:
+    - name: DOCKER_HOST
+      value: tcp://localhost:2375
     resources:
       requests:
         memory: "256Mi"
@@ -31,10 +54,8 @@ spec:
     - cat
     tty: true
   volumes:
-  - name: docker-sock
-    hostPath:
-      path: /var/run/docker.sock
-      type: Socket
+  - name: docker-storage
+    emptyDir: {}
 """
         }
     }
@@ -56,6 +77,55 @@ spec:
     }
     
     stages {
+        stage('Setup Docker') {
+            steps {
+                container('docker-cli') {
+                    script {
+                        // Docker 데몬이 준비될 때까지 대기
+                        sh """
+                            echo "Waiting for Docker daemon to be ready..."
+                            until docker info >/dev/null 2>&1; do
+                                echo "Waiting for Docker daemon..."
+                                sleep 2
+                            done
+                            echo "Docker daemon is ready!"
+                            
+                            # DNS 해결을 위한 hosts 파일 설정
+                            echo "Setting up hosts entries for Harbor..."
+                            
+                            # Harbor 서비스의 실제 IP 주소 가져오기
+                            HARBOR_CORE_IP=\$(getent hosts harbor-core.harbor.svc.cluster.local | awk '{ print \$1 }')
+                            HARBOR_REGISTRY_IP=\$(getent hosts harbor-registry.harbor.svc.cluster.local | awk '{ print \$1 }')
+                            
+                            echo "Harbor Core IP: \$HARBOR_CORE_IP"
+                            echo "Harbor Registry IP: \$HARBOR_REGISTRY_IP"
+                            
+                            # hosts 파일에 추가 (컨테이너 내부)
+                            echo "\$HARBOR_CORE_IP harbor-core.harbor.svc.cluster.local" >> /etc/hosts
+                            echo "\$HARBOR_REGISTRY_IP harbor-registry.harbor.svc.cluster.local" >> /etc/hosts
+                            
+                            # Docker 데몬 설정에 insecure registry 추가
+                            mkdir -p /etc/docker
+                            cat > /etc/docker/daemon.json <<EOF
+{
+    "insecure-registries": [
+        "harbor-core.harbor.svc.cluster.local",
+        "harbor-registry.harbor.svc.cluster.local:5000",
+        "\$HARBOR_CORE_IP",
+        "\$HARBOR_REGISTRY_IP:5000"
+    ]
+}
+EOF
+                            
+                            # Docker 데몬 재시작은 DinD 환경에서는 불가능하므로 skip
+                            
+                            echo "Docker setup completed!"
+                        """
+                    }
+                }
+            }
+        }
+        
         stage('Checkout') {
             steps {
                 script {
@@ -113,7 +183,7 @@ spec:
         
         stage('Docker Build') {
             steps {
-                container('docker') {
+                container('docker-cli') {
                     script {
                         echo "Building Docker image in Kubernetes Pod..."
                         
@@ -137,33 +207,30 @@ spec:
             }
         }
         
-        stage('Test Harbor Credential') {
+        stage('Test Harbor Connectivity') {
             steps {
-                container('docker') {
+                container('docker-cli') {
                     script {
-                        echo "Testing Harbor internal service connectivity..."
+                        echo "Testing Harbor connectivity..."
                         
-                        // DNS 해결 확인만 수행
+                        // DNS 및 네트워크 연결 테스트
                         sh """
-                            echo "=== Harbor Internal Service DNS Check ==="
-                            echo "Harbor Core Service: ${HARBOR_REGISTRY}"
-                            nslookup ${HARBOR_REGISTRY} || echo "Harbor Core DNS resolution failed"
+                            echo "=== Network Connectivity Test ==="
                             
-                            echo "Harbor Registry Service: harbor-registry.harbor.svc.cluster.local"
-                            nslookup harbor-registry.harbor.svc.cluster.local || echo "Harbor Registry DNS resolution failed"
+                            # DNS 해결 테스트
+                            echo "Testing DNS resolution..."
+                            getent hosts ${HARBOR_REGISTRY} || echo "Core DNS resolution failed"
+                            getent hosts harbor-registry.harbor.svc.cluster.local || echo "Registry DNS resolution failed"
+                            
+                            # hosts 파일 확인
+                            echo -e "\n/etc/hosts entries:"
+                            cat /etc/hosts | grep harbor || echo "No harbor entries in hosts file"
+                            
+                            # 포트 연결 테스트
+                            echo -e "\nTesting port connectivity..."
+                            nc -zv ${HARBOR_REGISTRY} 80 || echo "Harbor Core port 80 not reachable"
+                            nc -zv harbor-registry.harbor.svc.cluster.local 5000 || echo "Harbor Registry port 5000 not reachable"
                         """
-                        
-                        // Harbor credential으로 직접 Docker login 테스트
-                        withCredentials([usernamePassword(credentialsId: HARBOR_CREDENTIAL_ID, passwordVariable: 'HARBOR_PASSWORD', usernameVariable: 'HARBOR_USERNAME')]) {
-                            sh """
-                                echo "=== Testing Docker login to Harbor Registry ==="
-                                echo "Harbor Username: \$HARBOR_USERNAME"
-                                echo "Harbor Password length: \${#HARBOR_PASSWORD}"
-                                
-                                echo "Attempting Docker login to Harbor Registry..."
-                                echo "\$HARBOR_PASSWORD" | docker login harbor-registry.harbor.svc.cluster.local:5000 -u "\$HARBOR_USERNAME" --password-stdin || echo "Docker login failed"
-                            """
-                        }
                     }
                 }
             }
@@ -171,50 +238,27 @@ spec:
         
         stage('Docker Push to Harbor') {
             steps {
-                container('docker') {
+                container('docker-cli') {
                     script {
-                        echo "Pushing Docker image to Harbor internal registry..."
+                        echo "Pushing Docker image to Harbor..."
                         
-                        // Harbor Registry 내부 서비스 주소 (포트 5000)
-                        def harborRegistryService = "harbor-registry.harbor.svc.cluster.local:5000"
-                        
-                        // 내부 서비스용 이미지 태그 생성
-                        def internalFullImageTag = "${harborRegistryService}/${HARBOR_PROJECT}/${HARBOR_REPO}:${env.VERSION_TAG}"
-                        def internalLatestImageTag = "${harborRegistryService}/${HARBOR_PROJECT}/${HARBOR_REPO}:latest"
-                        
-                        // 기존 이미지를 내부 서비스 주소로 다시 태그
-                        sh """
-                            echo "Re-tagging images for Harbor internal registry..."
-                            docker tag ${env.FULL_IMAGE_TAG} ${internalFullImageTag}
-                            docker tag ${env.LATEST_IMAGE_TAG} ${internalLatestImageTag}
-                            
-                            echo "Images tagged for internal registry:"
-                            echo "  - ${internalFullImageTag}"
-                            echo "  - ${internalLatestImageTag}"
-                        """
-                        
-                        // Harbor 레지스트리 로그인
+                        // Harbor 레지스트리 로그인 및 푸시
                         withCredentials([usernamePassword(credentialsId: HARBOR_CREDENTIAL_ID, passwordVariable: 'HARBOR_PASSWORD', usernameVariable: 'HARBOR_USERNAME')]) {
                             sh """
-                                echo "Logging into Harbor internal registry: ${harborRegistryService}"
-                                echo "\$HARBOR_PASSWORD" | docker login ${harborRegistryService} -u "\$HARBOR_USERNAME" --password-stdin
+                                echo "=== Attempting Harbor Login ==="
+                                
+                                # 먼저 Harbor Core에 로그인 시도
+                                echo "Logging into Harbor Core: ${HARBOR_REGISTRY}"
+                                echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin
+                                
+                                # 이미지 푸시
+                                echo -e "\nPushing images to Harbor..."
+                                docker push ${env.FULL_IMAGE_TAG}
+                                docker push ${env.LATEST_IMAGE_TAG}
+                                
+                                echo "✅ Docker images pushed successfully!"
                             """
                         }
-                        
-                        // 이미지 푸시
-                        sh """
-                            echo "Pushing images to Harbor internal registry..."
-                            docker push ${internalFullImageTag}
-                            docker push ${internalLatestImageTag}
-                        """
-                        
-                        // 환경변수 업데이트 (post 단계에서 사용)
-                        env.FINAL_FULL_IMAGE_TAG = internalFullImageTag
-                        env.FINAL_LATEST_IMAGE_TAG = internalLatestImageTag
-                        
-                        echo "✅ Docker images pushed successfully to Harbor internal registry!"
-                        echo "  - ${internalFullImageTag}"
-                        echo "  - ${internalLatestImageTag}"
                     }
                 }
             }
@@ -222,16 +266,14 @@ spec:
         
         stage('Clean Up') {
             steps {
-                container('docker') {
+                container('docker-cli') {
                     script {
                         echo "Cleaning up local Docker images..."
                         
-                        // 로컬 Docker 이미지 정리 (모든 태그 포함)
+                        // 로컬 Docker 이미지 정리
                         sh """
                             docker rmi ${env.FULL_IMAGE_TAG} || true
                             docker rmi ${env.LATEST_IMAGE_TAG} || true
-                            docker rmi ${env.FINAL_FULL_IMAGE_TAG} || true
-                            docker rmi ${env.FINAL_LATEST_IMAGE_TAG} || true
                             docker system prune -f || true
                         """
                         
@@ -255,14 +297,11 @@ spec:
         success {
             script {
                 echo "✅ Pipeline succeeded!"
-                echo "Docker images have been successfully pushed to Harbor internal registry:"
-                echo "  Registry: harbor-registry.harbor.svc.cluster.local:5000"
+                echo "Docker images have been successfully pushed to Harbor:"
+                echo "  Registry: ${HARBOR_REGISTRY}"
                 echo "  Project: ${HARBOR_PROJECT}"
                 echo "  Repository: ${HARBOR_REPO}"
                 echo "  Version Tag: ${env.VERSION_TAG}"
-                echo "  Final Images:"
-                echo "    - ${env.FINAL_FULL_IMAGE_TAG ?: env.FULL_IMAGE_TAG}"
-                echo "    - ${env.FINAL_LATEST_IMAGE_TAG ?: env.LATEST_IMAGE_TAG}"
             }
         }
         
@@ -270,13 +309,6 @@ spec:
             script {
                 echo "❌ Pipeline failed!"
                 echo "Please check the build logs for error details."
-            }
-        }
-        
-        cleanup {
-            script {
-                // 추가 정리 작업이 필요한 경우
-                echo "Performing final cleanup..."
             }
         }
     }
