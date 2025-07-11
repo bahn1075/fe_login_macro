@@ -258,7 +258,7 @@ EOF
                             # 포트 연결 테스트
                             echo -e "\nTesting port connectivity..."
                             nc -zv ${HARBOR_REGISTRY} 80 || echo "Harbor Core port 80 not reachable"
-                            // nc -zv ${HARBOR_REGISTRY} 443 || echo "Harbor Core port 443 not reachable"
+                            nc -zv ${HARBOR_REGISTRY} 443 || echo "Harbor Core port 443 not reachable"
                             nc -zv harbor-registry.harbor.svc.cluster.local 5000 || echo "Harbor Registry port 5000 not reachable"
                             
                             # Harbor API 테스트
@@ -267,7 +267,7 @@ EOF
                             curl -v -k http://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "HTTP API test failed"
                             
                             # HTTPS로 시도
-                            // curl -v -k https://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "HTTPS API test failed"
+                            curl -v -k https://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "HTTPS API test failed"
                         """
                     }
                 }
