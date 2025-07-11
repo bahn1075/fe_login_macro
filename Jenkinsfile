@@ -103,9 +103,20 @@ spec:
                         usernameVariable: 'HARBOR_USERNAME'
                     )]) {
                         sh """
-                            # Harbor에 로그인
-                            echo "Logging in to Harbor..."
-                            echo "\$HARBOR_PASSWORD" | docker login harbor-core.harbor.svc.cluster.local -u "\$HARBOR_USERNAME" --password-stdin
+                            # Docker 데몬 설정 (insecure registry 추가)
+                            mkdir -p ~/.docker
+                            cat > ~/.docker/config.json <<EOF
+{
+    "insecure-registries": [
+        "harbor-core.harbor.svc.cluster.local",
+        "harbor-core.harbor.svc.cluster.local:80"
+    ]
+}
+EOF
+                            
+                            # Harbor에 HTTP로 로그인
+                            echo "Logging in to Harbor via HTTP..."
+                            echo "\$HARBOR_PASSWORD" | docker login http://harbor-core.harbor.svc.cluster.local -u "\$HARBOR_USERNAME" --password-stdin
                             
                             # 이미지 푸시
                             echo "Pushing images to Harbor..."
