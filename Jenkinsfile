@@ -74,13 +74,13 @@ spec:
     
     environment {
         // Harbor 설정 - Ingress를 통한 접근
-        HARBOR_URL = "harbor.local"
+        HARBOR_REGISTRY = "harbor.local"
         HARBOR_PROJECT = "fe_login_macro"
         HARBOR_REPO = "dev"
         HARBOR_CREDENTIAL_ID = "harbor"
         
         // 이미지 이름 설정
-        IMAGE_NAME = "${HARBOR_URL}/${HARBOR_PROJECT}/${HARBOR_REPO}"
+        IMAGE_NAME = "${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${HARBOR_REPO}"
         
         // SemVer 기본값
         MAJOR_VERSION = "1"
