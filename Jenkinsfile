@@ -18,6 +18,10 @@ spec:
     - --host=unix:///var/run/docker.sock
     - --storage-driver=overlay2
     - --tls=false
+    - --insecure-registry=harbor.local
+    - --insecure-registry=harbor.local:443
+    - --insecure-registry=192.168.49.2
+    - --insecure-registry=192.168.49.2:443
     - --insecure-registry=harbor-core.harbor.svc.cluster.local
     - --insecure-registry=harbor-core.harbor.svc.cluster.local:80
     - --insecure-registry=harbor-core.harbor.svc.cluster.local:443
@@ -69,14 +73,14 @@ spec:
     }
     
     environment {
-        // Harbor 설정 - Kubernetes 내부 서비스 사용
-        HARBOR_REGISTRY = "${env.HARBOR_URL ?: 'harbor-core.harbor.svc.cluster.local'}"
+        // Harbor 설정 - Ingress를 통한 접근
+        HARBOR_URL = "harbor.local"
         HARBOR_PROJECT = "fe_login_macro"
         HARBOR_REPO = "dev"
         HARBOR_CREDENTIAL_ID = "harbor"
         
         // 이미지 이름 설정
-        IMAGE_NAME = "${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${HARBOR_REPO}"
+        IMAGE_NAME = "${HARBOR_URL}/${HARBOR_PROJECT}/${HARBOR_REPO}"
         
         // SemVer 기본값
         MAJOR_VERSION = "1"
@@ -111,7 +115,13 @@ spec:
                             # hosts 파일에 추가 (컨테이너 내부)
                             echo "\$HARBOR_CORE_IP harbor-core.harbor.svc.cluster.local" >> /etc/hosts
                             echo "\$HARBOR_REGISTRY_IP harbor-registry.harbor.svc.cluster.local" >> /etc/hosts
-                            echo "\$HARBOR_CORE_IP harbor.local" >> /etc/hosts
+                            
+                            # Ingress 주소로 harbor.local 설정
+                            echo "192.168.49.2 harbor.local" >> /etc/hosts
+                            
+                            # 확인
+                            echo -e "\nHosts file updated:"
+                            cat /etc/hosts | grep harbor
                             
                             # Docker 클라이언트 설정 파일 생성
                             mkdir -p ~/.docker
@@ -122,6 +132,10 @@ spec:
         "User-Agent": "Docker-Client/24.0.0"
     },
     "insecure-registries": [
+        "harbor.local",
+        "harbor.local:443",
+        "192.168.49.2",
+        "192.168.49.2:443",
         "harbor-core.harbor.svc.cluster.local",
         "harbor-core.harbor.svc.cluster.local:80",
         "harbor-core.harbor.svc.cluster.local:443",
@@ -244,7 +258,7 @@ EOF
                             # 포트 연결 테스트
                             echo -e "\nTesting port connectivity..."
                             nc -zv ${HARBOR_REGISTRY} 80 || echo "Harbor Core port 80 not reachable"
-                            nc -zv ${HARBOR_REGISTRY} 443 || echo "Harbor Core port 443 not reachable"
+                            // nc -zv ${HARBOR_REGISTRY} 443 || echo "Harbor Core port 443 not reachable"
                             nc -zv harbor-registry.harbor.svc.cluster.local 5000 || echo "Harbor Registry port 5000 not reachable"
                             
                             # Harbor API 테스트
@@ -253,7 +267,7 @@ EOF
                             curl -v -k http://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "HTTP API test failed"
                             
                             # HTTPS로 시도
-                            curl -v -k https://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "HTTPS API test failed"
+                            // curl -v -k https://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "HTTPS API test failed"
                         """
                     }
                 }
