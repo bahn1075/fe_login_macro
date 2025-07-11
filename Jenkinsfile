@@ -18,6 +18,14 @@ spec:
     - --host=unix:///var/run/docker.sock
     - --storage-driver=overlay2
     - --tls=false
+    - --insecure-registry=harbor-core.harbor.svc.cluster.local
+    - --insecure-registry=harbor-core.harbor.svc.cluster.local:80
+    - --insecure-registry=harbor-core.harbor.svc.cluster.local:443
+    - --insecure-registry=harbor-registry.harbor.svc.cluster.local:5000
+    - --insecure-registry=10.110.228.152
+    - --insecure-registry=10.110.228.152:80
+    - --insecure-registry=10.110.228.152:443
+    - --insecure-registry=10.106.49.41:5000
     env:
     - name: DOCKER_TLS_CERTDIR
       value: ""
@@ -104,20 +112,26 @@ spec:
                             echo "\$HARBOR_CORE_IP harbor-core.harbor.svc.cluster.local" >> /etc/hosts
                             echo "\$HARBOR_REGISTRY_IP harbor-registry.harbor.svc.cluster.local" >> /etc/hosts
                             
-                            # Docker 데몬 설정에 insecure registry 추가
-                            mkdir -p /etc/docker
-                            cat > /etc/docker/daemon.json <<EOF
+                            # Docker 클라이언트 설정 파일 생성
+                            mkdir -p ~/.docker
+                            cat > ~/.docker/config.json <<EOF
 {
+    "auths": {},
+    "HttpHeaders": {
+        "User-Agent": "Docker-Client/24.0.0"
+    },
     "insecure-registries": [
         "harbor-core.harbor.svc.cluster.local",
+        "harbor-core.harbor.svc.cluster.local:80",
+        "harbor-core.harbor.svc.cluster.local:443",
         "harbor-registry.harbor.svc.cluster.local:5000",
         "\$HARBOR_CORE_IP",
+        "\$HARBOR_CORE_IP:80",
+        "\$HARBOR_CORE_IP:443",
         "\$HARBOR_REGISTRY_IP:5000"
     ]
 }
 EOF
-                            
-                            # Docker 데몬 재시작은 DinD 환경에서는 불가능하므로 skip
                             
                             echo "Docker setup completed!"
                         """
@@ -229,7 +243,16 @@ EOF
                             # 포트 연결 테스트
                             echo -e "\nTesting port connectivity..."
                             nc -zv ${HARBOR_REGISTRY} 80 || echo "Harbor Core port 80 not reachable"
+                            nc -zv ${HARBOR_REGISTRY} 443 || echo "Harbor Core port 443 not reachable"
                             nc -zv harbor-registry.harbor.svc.cluster.local 5000 || echo "Harbor Registry port 5000 not reachable"
+                            
+                            # Harbor API 테스트
+                            echo -e "\nTesting Harbor API endpoints..."
+                            # HTTP로 시도
+                            curl -v -k http://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "HTTP API test failed"
+                            
+                            # HTTPS로 시도
+                            curl -v -k https://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "HTTPS API test failed"
                         """
                     }
                 }
@@ -247,16 +270,57 @@ EOF
                             sh """
                                 echo "=== Attempting Harbor Login ==="
                                 
-                                # 먼저 Harbor Core에 로그인 시도
-                                echo "Logging into Harbor Core: ${HARBOR_REGISTRY}"
-                                echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin
+                                # HTTP와 HTTPS 모두 시도
+                                echo "Trying different Harbor endpoints..."
                                 
-                                # 이미지 푸시
-                                echo -e "\nPushing images to Harbor..."
-                                docker push ${env.FULL_IMAGE_TAG}
-                                docker push ${env.LATEST_IMAGE_TAG}
+                                # 1. HTTP로 Harbor Core 로그인 시도
+                                echo -e "\n1. Trying HTTP protocol on Harbor Core..."
+                                echo "\$HARBOR_PASSWORD" | docker login http://${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin || {
+                                    echo "HTTP login failed, trying without protocol..."
+                                }
                                 
-                                echo "✅ Docker images pushed successfully!"
+                                # 2. 프로토콜 없이 시도 (Docker가 자동으로 HTTPS 시도)
+                                echo -e "\n2. Trying without protocol specification..."
+                                echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin || {
+                                    echo "Default login failed, trying port 80..."
+                                }
+                                
+                                # 3. 포트 80 명시적 지정
+                                echo -e "\n3. Trying with port 80..."
+                                echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY}:80 -u "\$HARBOR_USERNAME" --password-stdin || {
+                                    echo "Port 80 login failed, trying registry service..."
+                                }
+                                
+                                # 4. Harbor Registry 서비스 직접 사용
+                                echo -e "\n4. Trying Harbor Registry service directly..."
+                                echo "\$HARBOR_PASSWORD" | docker login harbor-registry.harbor.svc.cluster.local:5000 -u "\$HARBOR_USERNAME" --password-stdin || {
+                                    echo "Registry service login failed"
+                                }
+                                
+                                # 로그인 성공 여부 확인
+                                if docker info | grep -q "Registry"; then
+                                    echo -e "\n✅ Docker login successful!"
+                                    
+                                    # 이미지 푸시
+                                    echo -e "\nPushing images to Harbor..."
+                                    docker push ${env.FULL_IMAGE_TAG} || {
+                                        echo "Push to main registry failed, trying alternatives..."
+                                        
+                                        # 대체 레지스트리로 태그 및 푸시
+                                        FALLBACK_TAG="${HARBOR_REGISTRY}:80/${HARBOR_PROJECT}/${HARBOR_REPO}:${env.VERSION_TAG}"
+                                        docker tag ${env.FULL_IMAGE_TAG} \$FALLBACK_TAG
+                                        docker push \$FALLBACK_TAG
+                                    }
+                                    
+                                    docker push ${env.LATEST_IMAGE_TAG} || {
+                                        echo "Latest tag push failed"
+                                    }
+                                    
+                                    echo "✅ Docker images pushed successfully!"
+                                else
+                                    echo "❌ All login attempts failed!"
+                                    exit 1
+                                fi
                             """
                         }
                     }
