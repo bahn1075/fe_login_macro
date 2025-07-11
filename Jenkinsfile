@@ -29,6 +29,11 @@ spec:
         IMAGE_NAME = "fe-login-macro"
         MAJOR_VERSION = "1"
         MINOR_VERSION = "0"
+        
+        // Harbor 설정
+        HARBOR_REGISTRY = "harbor.local"
+        HARBOR_PROJECT = "fe_login_macro"
+        HARBOR_CREDENTIAL_ID = "harbor_robot"
     }
     
     stages {
@@ -78,9 +83,38 @@ spec:
                         docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                         docker build -t ${IMAGE_NAME}:latest .
                         
+                        # Harbor용 태그 생성
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} harbor-core.harbor.svc.cluster.local/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker tag ${IMAGE_NAME}:latest harbor-core.harbor.svc.cluster.local/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
+                        
                         # 빌드 확인
                         docker images ${IMAGE_NAME}
                     """
+                }
+            }
+        }
+        
+        stage('Push to Harbor') {
+            steps {
+                container('docker-cli') {
+                    withCredentials([usernamePassword(
+                        credentialsId: "${HARBOR_CREDENTIAL_ID}",
+                        passwordVariable: 'HARBOR_PASSWORD',
+                        usernameVariable: 'HARBOR_USERNAME'
+                    )]) {
+                        sh """
+                            # Harbor에 로그인
+                            echo "Logging in to Harbor..."
+                            echo "\$HARBOR_PASSWORD" | docker login harbor-core.harbor.svc.cluster.local -u "\$HARBOR_USERNAME" --password-stdin
+                            
+                            # 이미지 푸시
+                            echo "Pushing images to Harbor..."
+                            docker push harbor-core.harbor.svc.cluster.local/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
+                            docker push harbor-core.harbor.svc.cluster.local/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
+                            
+                            echo "✅ Images pushed successfully!"
+                        """
+                    }
                 }
             }
         }
