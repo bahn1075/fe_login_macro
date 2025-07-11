@@ -39,8 +39,8 @@ spec:
     }
     
     environment {
-        // Harbor 설정
-        HARBOR_REGISTRY = "${env.HARBOR_URL ?: 'harbor.local'}"
+        // Harbor 설정 - Kubernetes 내부 서비스 사용
+        HARBOR_REGISTRY = "${env.HARBOR_URL ?: 'harbor-core.harbor.svc.cluster.local'}"
         HARBOR_PROJECT = "fe_login_macro"
         HARBOR_REPO = "dev"
         HARBOR_CREDENTIAL_ID = "harbor"
@@ -140,43 +140,35 @@ spec:
             steps {
                 container('docker') {
                     script {
-                        echo "Testing Harbor credential and connectivity..."
+                        echo "Testing Harbor internal service connectivity..."
                         
-                        // 필수 도구 설치
+                        // Harbor 내부 서비스 연결 테스트
                         sh """
-                            echo "=== Installing required tools ==="
-                            apk add --no-cache curl
-                        """
-                        
-                        // Harbor 연결 테스트
-                        sh """
-                            echo "=== Testing Harbor connectivity ==="
-                            echo "Testing HTTPS connection..."
-                            curl -k -I https://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "Harbor HTTPS connection failed"
+                            echo "=== Testing Harbor Internal Service ==="
+                            echo "Harbor Registry: ${HARBOR_REGISTRY}"
                             
-                            echo "Testing HTTP connection..."
-                            curl -k -I http://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "Harbor HTTP connection failed"
+                            # Kubernetes DNS 해결 테스트
+                            nslookup ${HARBOR_REGISTRY} || echo "DNS resolution failed"
                             
-                            echo "Testing basic connectivity..."
-                            curl -k -v https://${HARBOR_REGISTRY} || echo "Basic HTTPS connection failed"
+                            # HTTP 연결 테스트 (내부 서비스는 보통 HTTP 사용)
+                            curl -v --connect-timeout 10 --max-time 30 http://${HARBOR_REGISTRY}/api/v2.0/systeminfo || echo "Harbor API access failed"
+                            
+                            # Docker Registry 엔드포인트 테스트 (포트 5000)
+                            curl -v --connect-timeout 10 --max-time 30 http://harbor-registry.harbor.svc.cluster.local:5000/v2/ || echo "Docker registry endpoint failed"
                         """
                         
                         // Harbor credential 테스트
                         withCredentials([usernamePassword(credentialsId: HARBOR_CREDENTIAL_ID, passwordVariable: 'HARBOR_PASSWORD', usernameVariable: 'HARBOR_USERNAME')]) {
                             sh """
                                 echo "=== Testing Harbor credential ==="
-                                echo "Harbor Registry: ${HARBOR_REGISTRY}"
                                 echo "Harbor Username: \$HARBOR_USERNAME"
                                 echo "Harbor Password length: \${#HARBOR_PASSWORD}"
                                 
-                                echo "=== Testing Docker login with detailed output ==="
-                                echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin 2>&1 || echo "Docker login failed"
+                                echo "=== Testing Docker login to Harbor Registry ==="
+                                echo "\$HARBOR_PASSWORD" | docker login harbor-registry.harbor.svc.cluster.local:5000 -u "\$HARBOR_USERNAME" --password-stdin || echo "Docker login failed"
                                 
                                 echo "=== Testing Harbor API access ==="
-                                curl -k -u "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" https://${HARBOR_REGISTRY}/api/v2.0/projects 2>&1 || echo "Harbor API access failed"
-                                
-                                echo "=== Testing Harbor v1 API ==="
-                                curl -k -u "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" https://${HARBOR_REGISTRY}/api/repositories 2>&1 || echo "Harbor v1 API access failed"
+                                curl -u "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" http://${HARBOR_REGISTRY}/api/v2.0/projects || echo "Harbor API access failed"
                             """
                         }
                     }
@@ -188,26 +180,48 @@ spec:
             steps {
                 container('docker') {
                     script {
-                        echo "Pushing Docker image to Harbor registry..."
+                        echo "Pushing Docker image to Harbor internal registry..."
+                        
+                        // Harbor Registry 내부 서비스 주소 (포트 5000)
+                        def harborRegistryService = "harbor-registry.harbor.svc.cluster.local:5000"
+                        
+                        // 내부 서비스용 이미지 태그 생성
+                        def internalFullImageTag = "${harborRegistryService}/${HARBOR_PROJECT}/${HARBOR_REPO}:${env.VERSION_TAG}"
+                        def internalLatestImageTag = "${harborRegistryService}/${HARBOR_PROJECT}/${HARBOR_REPO}:latest"
+                        
+                        // 기존 이미지를 내부 서비스 주소로 다시 태그
+                        sh """
+                            echo "Re-tagging images for Harbor internal registry..."
+                            docker tag ${env.FULL_IMAGE_TAG} ${internalFullImageTag}
+                            docker tag ${env.LATEST_IMAGE_TAG} ${internalLatestImageTag}
+                            
+                            echo "Images tagged for internal registry:"
+                            echo "  - ${internalFullImageTag}"
+                            echo "  - ${internalLatestImageTag}"
+                        """
                         
                         // Harbor 레지스트리 로그인
                         withCredentials([usernamePassword(credentialsId: HARBOR_CREDENTIAL_ID, passwordVariable: 'HARBOR_PASSWORD', usernameVariable: 'HARBOR_USERNAME')]) {
                             sh """
-                                echo "Logging into Harbor registry: ${HARBOR_REGISTRY}"
-                                echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin
+                                echo "Logging into Harbor internal registry: ${harborRegistryService}"
+                                echo "\$HARBOR_PASSWORD" | docker login ${harborRegistryService} -u "\$HARBOR_USERNAME" --password-stdin
                             """
                         }
                         
                         // 이미지 푸시
                         sh """
-                            echo "Pushing images to Harbor..."
-                            docker push ${env.FULL_IMAGE_TAG}
-                            docker push ${env.LATEST_IMAGE_TAG}
+                            echo "Pushing images to Harbor internal registry..."
+                            docker push ${internalFullImageTag}
+                            docker push ${internalLatestImageTag}
                         """
                         
-                        echo "✅ Docker images pushed successfully to Harbor!"
-                        echo "  - ${env.FULL_IMAGE_TAG}"
-                        echo "  - ${env.LATEST_IMAGE_TAG}"
+                        // 환경변수 업데이트 (post 단계에서 사용)
+                        env.FINAL_FULL_IMAGE_TAG = internalFullImageTag
+                        env.FINAL_LATEST_IMAGE_TAG = internalLatestImageTag
+                        
+                        echo "✅ Docker images pushed successfully to Harbor internal registry!"
+                        echo "  - ${internalFullImageTag}"
+                        echo "  - ${internalLatestImageTag}"
                     }
                 }
             }
@@ -219,10 +233,12 @@ spec:
                     script {
                         echo "Cleaning up local Docker images..."
                         
-                        // 로컬 Docker 이미지 정리
+                        // 로컬 Docker 이미지 정리 (모든 태그 포함)
                         sh """
                             docker rmi ${env.FULL_IMAGE_TAG} || true
                             docker rmi ${env.LATEST_IMAGE_TAG} || true
+                            docker rmi ${env.FINAL_FULL_IMAGE_TAG} || true
+                            docker rmi ${env.FINAL_LATEST_IMAGE_TAG} || true
                             docker system prune -f || true
                         """
                         
@@ -246,11 +262,14 @@ spec:
         success {
             script {
                 echo "✅ Pipeline succeeded!"
-                echo "Docker images have been successfully pushed to Harbor:"
-                echo "  Registry: ${HARBOR_REGISTRY}"
+                echo "Docker images have been successfully pushed to Harbor internal registry:"
+                echo "  Registry: harbor-registry.harbor.svc.cluster.local:5000"
                 echo "  Project: ${HARBOR_PROJECT}"
                 echo "  Repository: ${HARBOR_REPO}"
                 echo "  Version Tag: ${env.VERSION_TAG}"
+                echo "  Final Images:"
+                echo "    - ${env.FINAL_FULL_IMAGE_TAG ?: env.FULL_IMAGE_TAG}"
+                echo "    - ${env.FINAL_LATEST_IMAGE_TAG ?: env.LATEST_IMAGE_TAG}"
             }
         }
         
