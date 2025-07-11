@@ -111,6 +111,7 @@ spec:
                             # hosts 파일에 추가 (컨테이너 내부)
                             echo "\$HARBOR_CORE_IP harbor-core.harbor.svc.cluster.local" >> /etc/hosts
                             echo "\$HARBOR_REGISTRY_IP harbor-registry.harbor.svc.cluster.local" >> /etc/hosts
+                            echo "\$HARBOR_CORE_IP harbor.local" >> /etc/hosts
                             
                             # Docker 클라이언트 설정 파일 생성
                             mkdir -p ~/.docker
