@@ -5,28 +5,39 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  hostAliases:
+  - ip: "192.168.49.2"
+    hostnames:
+    - "harbor.local"
   containers:
   - name: docker
-    image: docker:dind
+    image: docker:24-cli
+    command: ['cat']
+    tty: true
+    env:
+    - name: DOCKER_HOST
+      value: tcp://localhost:2376
+  - name: dind
+    image: docker:24-dind
     securityContext:
       privileged: true
     env:
     - name: DOCKER_TLS_CERTDIR
       value: ""
-  - name: docker-cli
-    image: docker:cli
-    command:
-    - cat
-    tty: true
-    env:
-    - name: DOCKER_HOST
-      value: tcp://localhost:2375
+    args:
+    - --host=tcp://0.0.0.0:2376
+    - --insecure-registry=harbor.local
+    readinessProbe:
+      exec:
+        command: ["docker", "info"]
+      initialDelaySeconds: 5
+      periodSeconds: 2
 """
         }
     }
     
     environment {
-        IMAGE_NAME = "fe-login-macro"
+        IMAGE_NAME = "fe_login_macro"
         MAJOR_VERSION = "1"
         MINOR_VERSION = "0"
         
@@ -71,7 +82,7 @@ spec:
         
         stage('Docker Build') {
             steps {
-                container('docker-cli') {
+                container('docker') {
                     sh """
                         # Docker 데몬 준비 대기
                         until docker info >/dev/null 2>&1; do
@@ -84,8 +95,8 @@ spec:
                         docker build -t ${IMAGE_NAME}:latest .
                         
                         # Harbor용 태그 생성
-                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} harbor-core.harbor.svc.cluster.local/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
-                        docker tag ${IMAGE_NAME}:latest harbor-core.harbor.svc.cluster.local/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
+                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker tag ${IMAGE_NAME}:latest ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
                         
                         # 빌드 확인
                         docker images ${IMAGE_NAME}
@@ -96,32 +107,21 @@ spec:
         
         stage('Push to Harbor') {
             steps {
-                container('docker-cli') {
+                container('docker') {
                     withCredentials([usernamePassword(
                         credentialsId: "${HARBOR_CREDENTIAL_ID}",
                         passwordVariable: 'HARBOR_PASSWORD',
                         usernameVariable: 'HARBOR_USERNAME'
                     )]) {
                         sh """
-                            # Docker 데몬 설정 (insecure registry 추가)
-                            mkdir -p ~/.docker
-                            cat > ~/.docker/config.json <<EOF
-{
-    "insecure-registries": [
-        "harbor-core.harbor.svc.cluster.local",
-        "harbor-core.harbor.svc.cluster.local:80"
-    ]
-}
-EOF
-                            
-                            # Harbor에 HTTP로 로그인
-                            echo "Logging in to Harbor via HTTP..."
-                            echo "\$HARBOR_PASSWORD" | docker login http://harbor-core.harbor.svc.cluster.local -u "\$HARBOR_USERNAME" --password-stdin
+                            # Harbor에 로그인
+                            echo "Logging in to Harbor..."
+                            echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin
                             
                             # 이미지 푸시
                             echo "Pushing images to Harbor..."
-                            docker push harbor-core.harbor.svc.cluster.local/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
-                            docker push harbor-core.harbor.svc.cluster.local/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
+                            docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
+                            docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
                             
                             echo "✅ Images pushed successfully!"
                         """
