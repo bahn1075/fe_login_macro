@@ -96,29 +96,20 @@ spec:
                             sleep 2
                         done
                         
-                        # BuildKit 활성화
-                        export DOCKER_BUILDKIT=1
+                        echo "🚀 Building Docker image..."
                         
-                        # 캐시 태그 정의
-                        CACHE_TAG="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:buildcache"
-                        
-                        echo "🚀 Building with registry cache..."
-                        
-                        # BuildKit을 사용한 캐시 활용 빌드
-                        docker buildx build \\
-                            --cache-from=type=registry,ref=\$CACHE_TAG \\
-                            --cache-to=type=registry,ref=\$CACHE_TAG,mode=max \\
+                        # 기본 Docker 빌드 (캐시 없이)
+                        docker build \\
                             --tag ${IMAGE_NAME}:${IMAGE_TAG} \\
                             --tag ${IMAGE_NAME}:latest \\
                             --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} \\
                             --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest \\
-                            --load \\
                             .
                         
                         # 빌드 확인
                         docker images ${IMAGE_NAME}
                         
-                        echo "✅ Build completed with cache optimization!"
+                        echo "✅ Build completed!"
                     """
                 }
             }
@@ -142,11 +133,7 @@ spec:
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
                             
-                            # 캐시 이미지도 푸시 (백그라운드)
-                            echo "💾 Pushing build cache..."
-                            docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:buildcache || echo "Cache push failed, but continuing..."
-                            
-                            echo "✅ Images and cache pushed successfully!"
+                            echo "✅ Images pushed successfully!"
                         """
                     }
                 }
