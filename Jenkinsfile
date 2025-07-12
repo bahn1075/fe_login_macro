@@ -113,11 +113,10 @@ spec:
                         
                         echo "🚀 Building with BuildKit..."
                         
-                        # 1단계: Harbor에서 캐시 가져오기 시도하고 동시에 캐시 생성
+                        # 1단계: Harbor에서 캐시 가져오기 시도 (저장은 하지 않음)
                         echo "Building with cache optimization..."
                         docker buildx build \\
                             --cache-from=type=registry,ref=\$CACHE_TAG,registry.insecure=true \\
-                            --cache-to=type=registry,ref=\$CACHE_TAG,mode=max,registry.insecure=true \\
                             --tag ${IMAGE_NAME}:${IMAGE_TAG} \\
                             --tag ${IMAGE_NAME}:latest \\
                             --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} \\
@@ -160,6 +159,15 @@ spec:
                             echo "📦 Pushing images to Harbor..."
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
+                            
+                            # Harbor 로그인 상태에서 캐시 생성 및 푸시
+                            echo "💾 Creating and pushing build cache after Harbor login..."
+                            docker buildx use mybuilder
+                            docker buildx build \\
+                                --cache-to=type=registry,ref=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:buildcache,mode=max,registry.insecure=true \\
+                                --platform linux/amd64 \\
+                                --tag temp-cache-build \\
+                                . && echo "✅ Cache pushed successfully!" || echo "⚠️ Cache push failed, but main images are already pushed"
                             
                             echo "✅ Images pushed successfully!"
                         """
