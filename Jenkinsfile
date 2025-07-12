@@ -116,8 +116,8 @@ spec:
                         # 1단계: Harbor에서 캐시 가져오기 시도하고 동시에 캐시 생성
                         echo "Building with cache optimization..."
                         docker buildx build \\
-                            --cache-from=type=registry,ref=\$CACHE_TAG \\
-                            --cache-to=type=registry,ref=\$CACHE_TAG,mode=max \\
+                            --cache-from=type=registry,ref=\$CACHE_TAG,registry.insecure=true \\
+                            --cache-to=type=registry,ref=\$CACHE_TAG,mode=max,registry.insecure=true \\
                             --tag ${IMAGE_NAME}:${IMAGE_TAG} \\
                             --tag ${IMAGE_NAME}:latest \\
                             --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} \\
@@ -160,8 +160,6 @@ spec:
                             echo "📦 Pushing images to Harbor..."
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
-                            
-                            echo "✅ Images pushed successfully!"
                             
                             echo "✅ Images pushed successfully!"
                         """
