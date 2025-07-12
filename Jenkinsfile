@@ -113,17 +113,18 @@ spec:
                         
                         echo "🚀 Building with BuildKit..."
                         
-                        # 1단계: Harbor에서 캐시 가져오기 시도 (실패해도 계속)
-                        echo "Trying to pull existing cache..."
+                        # 1단계: Harbor에서 캐시 가져오기 시도하고 동시에 캐시 생성
+                        echo "Building with cache optimization..."
                         docker buildx build \\
                             --cache-from=type=registry,ref=\$CACHE_TAG \\
+                            --cache-to=type=registry,ref=\$CACHE_TAG,mode=max \\
                             --tag ${IMAGE_NAME}:${IMAGE_TAG} \\
                             --tag ${IMAGE_NAME}:latest \\
                             --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} \\
                             --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest \\
                             --output type=docker \\
                             . || {
-                            echo "Cache pull failed, building without cache..."
+                            echo "Cache optimization failed, building without cache..."
                             docker buildx build \\
                                 --tag ${IMAGE_NAME}:${IMAGE_TAG} \\
                                 --tag ${IMAGE_NAME}:latest \\
@@ -160,14 +161,7 @@ spec:
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
                             
-                            # 캐시 생성 및 푸시 (별도 프로세스)
-                            echo "💾 Creating and pushing build cache..."
-                            docker buildx build \\
-                                --cache-to=type=registry,ref=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:buildcache,mode=max \\
-                                --platform linux/amd64 \\
-                                --tag temp-cache-build:latest \\
-                                --push \\
-                                . && echo "✅ Cache pushed successfully!" || echo "⚠️ Cache push failed, but main images are already pushed"
+                            echo "✅ Images pushed successfully!"
                             
                             echo "✅ Images pushed successfully!"
                         """
