@@ -12,6 +12,7 @@ spec:
   containers:
   - name: docker
     image: docker:24-cli
+    imagePullPolicy: IfNotPresent
     command: ['cat']
     tty: true
     env:
@@ -19,19 +20,24 @@ spec:
       value: tcp://localhost:2376
   - name: dind
     image: docker:24-dind
+    imagePullPolicy: IfNotPresent
     securityContext:
       privileged: true
     env:
     - name: DOCKER_TLS_CERTDIR
       value: ""
+    - name: DOCKER_BUILDKIT
+      value: "1"
     args:
     - --host=tcp://0.0.0.0:2376
     - --insecure-registry=harbor.local
     readinessProbe:
       exec:
         command: ["docker", "info"]
-      initialDelaySeconds: 5
-      periodSeconds: 2
+      initialDelaySeconds: 10
+      periodSeconds: 3
+      timeoutSeconds: 5
+      failureThreshold: 10
 """
         }
     }
@@ -90,16 +96,29 @@ spec:
                             sleep 2
                         done
                         
-                        # 이미지 빌드
-                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                        docker build -t ${IMAGE_NAME}:latest .
+                        # BuildKit 활성화
+                        export DOCKER_BUILDKIT=1
                         
-                        # Harbor용 태그 생성
-                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
-                        docker tag ${IMAGE_NAME}:latest ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
+                        # 캐시 태그 정의
+                        CACHE_TAG="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:buildcache"
+                        
+                        echo "🚀 Building with registry cache..."
+                        
+                        # BuildKit을 사용한 캐시 활용 빌드
+                        docker buildx build \\
+                            --cache-from=type=registry,ref=\$CACHE_TAG \\
+                            --cache-to=type=registry,ref=\$CACHE_TAG,mode=max \\
+                            --tag ${IMAGE_NAME}:${IMAGE_TAG} \\
+                            --tag ${IMAGE_NAME}:latest \\
+                            --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} \\
+                            --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest \\
+                            --load \\
+                            .
                         
                         # 빌드 확인
                         docker images ${IMAGE_NAME}
+                        
+                        echo "✅ Build completed with cache optimization!"
                     """
                 }
             }
@@ -119,11 +138,15 @@ spec:
                             echo "\$HARBOR_PASSWORD" | docker login ${HARBOR_REGISTRY} -u "\$HARBOR_USERNAME" --password-stdin
                             
                             # 이미지 푸시
-                            echo "Pushing images to Harbor..."
+                            echo "📦 Pushing images to Harbor..."
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
                             
-                            echo "✅ Images pushed successfully!"
+                            # 캐시 이미지도 푸시 (백그라운드)
+                            echo "💾 Pushing build cache..."
+                            docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:buildcache || echo "Cache push failed, but continuing..."
+                            
+                            echo "✅ Images and cache pushed successfully!"
                         """
                     }
                 }
