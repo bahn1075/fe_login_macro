@@ -164,8 +164,10 @@ spec:
                             echo "💾 Creating and pushing build cache..."
                             docker buildx build \\
                                 --cache-to=type=registry,ref=${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:buildcache,mode=max \\
-                                --tag temp-cache-build \\
-                                . || echo "Cache push failed, but main images are already pushed"
+                                --platform linux/amd64 \\
+                                --tag temp-cache-build:latest \\
+                                --push \\
+                                . && echo "✅ Cache pushed successfully!" || echo "⚠️ Cache push failed, but main images are already pushed"
                             
                             echo "✅ Images pushed successfully!"
                         """
