@@ -96,20 +96,38 @@ spec:
                             sleep 2
                         done
                         
-                        echo "🚀 Building Docker image..."
+                        # BuildKit 활성화 및 builder 설정
+                        export DOCKER_BUILDKIT=1
                         
-                        # 기본 Docker 빌드 (캐시 없이)
-                        docker build \\
+                        # 기존 builder 제거 (실패해도 계속 진행)
+                        docker buildx rm mybuilder || true
+                        
+                        # docker-container 드라이버로 새 builder 생성
+                        docker buildx create --name mybuilder --driver docker-container --use
+                        
+                        # builder 부트스트랩
+                        docker buildx inspect --bootstrap
+                        
+                        # 캐시 태그 정의
+                        CACHE_TAG="${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:buildcache"
+                        
+                        echo "🚀 Building with registry cache using BuildKit..."
+                        
+                        # BuildKit을 사용한 캐시 활용 빌드
+                        docker buildx build \\
+                            --cache-from=type=registry,ref=\$CACHE_TAG \\
+                            --cache-to=type=registry,ref=\$CACHE_TAG,mode=max \\
                             --tag ${IMAGE_NAME}:${IMAGE_TAG} \\
                             --tag ${IMAGE_NAME}:latest \\
                             --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} \\
                             --tag ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest \\
+                            --output type=docker \\
                             .
                         
                         # 빌드 확인
                         docker images ${IMAGE_NAME}
                         
-                        echo "✅ Build completed!"
+                        echo "✅ Build completed with registry cache optimization!"
                     """
                 }
             }
@@ -133,7 +151,11 @@ spec:
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}
                             docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:latest
                             
-                            echo "✅ Images pushed successfully!"
+                            # 캐시 이미지도 푸시 (이미 BuildKit에 의해 푸시되었지만 확인차)
+                            echo "💾 Ensuring build cache is available..."
+                            docker push ${HARBOR_REGISTRY}/${HARBOR_PROJECT}/${IMAGE_NAME}:buildcache || echo "Cache already pushed or push failed, continuing..."
+                            
+                            echo "✅ Images and cache pushed successfully!"
                         """
                     }
                 }
