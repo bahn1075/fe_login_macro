@@ -1,0 +1,52 @@
+replicaCount: 1
+
+image:
+  repository: harbor.local/fe_login_macro/fe_login_macro
+  pullPolicy: IfNotPresent
+  tag: "{{ .Values.global.imageTag | default \"latest\" }}"
+
+nameOverride: ""
+fullnameOverride: "{{ .Values.global.appName | default \"fe-login-macro\" }}"
+
+namespace: "{{ .Values.global.namespace | default \"macro\" }}"
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: "{{ .Values.global.ingressHost | default \"fe-macro.local\" }}"
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Branch-based configuration
+global:
+  targetRevision: HEAD
+  # 브랜치별 설정 변수들
+  appName: "fe-login-macro"
+  namespace: "macro"
+  imageTag: "latest"
+  ingressHost: "fe-macro.local"
+  branchName: "main"

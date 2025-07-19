@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fe-login-macro-feature1
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app: fe-login-macro
+    branch: feature1
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/bahn1075/fe_login_macro.git
+    targetRevision: feature1
+    path: argocd
+    helm:
+      valueFiles:
+        - values.yaml
+      parameters:
+        - name: global.appName
+          value: "fe-login-macro-feature1"
+        - name: global.namespace
+          value: "macro-feature1"
+        - name: global.imageTag
+          value: "latest"
+        - name: global.ingressHost
+          value: "fe-macro-feature1.local"
+        - name: global.branchName
+          value: "feature1"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: macro-feature1
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
