@@ -3,12 +3,12 @@ replicaCount: 1
 image:
   repository: harbor.local/fe_login_macro/fe_login_macro
   pullPolicy: IfNotPresent
-  tag: "{{ .Values.global.imageTag | default \"latest\" }}"
+  tag: "latest"
 
 nameOverride: ""
-fullnameOverride: "{{ .Values.global.appName | default \"fe-login-macro\" }}"
+fullnameOverride: ""
 
-namespace: "{{ .Values.global.namespace | default \"macro\" }}"
+namespace: "macro"
 
 service:
   type: ClusterIP
@@ -21,7 +21,7 @@ ingress:
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
   hosts:
-    - host: "{{ .Values.global.ingressHost | default \"fe-macro.local\" }}"
+    - host: "fe-macro.local"
       paths:
         - path: /
           pathType: Prefix

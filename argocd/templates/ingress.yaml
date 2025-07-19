@@ -2,8 +2,8 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "fe-login-macro.fullname" . }}
-  namespace: {{ .Values.namespace }}
+  name: {{ .Values.global.appName | default (include "fe-login-macro.fullname" .) }}
+  namespace: {{ .Values.global.namespace | default .Values.namespace }}
   labels:
     {{- include "fe-login-macro.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
@@ -25,6 +25,18 @@ spec:
     {{- end }}
   {{- end }}
   rules:
+    {{- if .Values.global.ingressHost }}
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Values.global.appName | default (include "fe-login-macro.fullname" $) }}
+                port:
+                  number: {{ $.Values.service.port }}
+    {{- else }}
     {{- range .Values.ingress.hosts }}
     - host: {{ .host | quote }}
       http:
@@ -34,9 +46,10 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "fe-login-macro.fullname" $ }}
+                name: {{ $.Values.global.appName | default (include "fe-login-macro.fullname" $) }}
                 port:
                   number: {{ $.Values.service.port }}
           {{- end }}
+    {{- end }}
     {{- end }}
 {{- end }}

@@ -1,8 +1,8 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "fe-login-macro.fullname" . }}
-  namespace: {{ .Values.namespace }}
+  name: {{ .Values.global.appName | default (include "fe-login-macro.fullname" .) }}
+  namespace: {{ .Values.global.namespace | default .Values.namespace }}
   labels:
     {{- include "fe-login-macro.labels" . | nindent 4 }}
 spec:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: {{ .Chart.Name }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.global.imageTag | default .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
